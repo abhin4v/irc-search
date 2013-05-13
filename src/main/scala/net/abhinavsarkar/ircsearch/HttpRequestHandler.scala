@@ -36,6 +36,7 @@ trait HttpRequestHandler extends ChannelInboundMessageHandlerAdapter[HttpRequest
   protected def sendSuccess(ctx : ChannelHandlerContext, request : HttpRequest, body : String) : HttpResponse = {
     val response = new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK)
     response.setContent(Unpooled.copiedBuffer(body.getBytes))
+    response.setHeader(CONTENT_TYPE, "application/json")
     writeResponse(ctx, request, response)
     response
   }

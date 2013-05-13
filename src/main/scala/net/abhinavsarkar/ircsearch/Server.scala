@@ -1,7 +1,13 @@
 package net.abhinavsarkar.ircsearch
 
 import java.net.InetSocketAddress
+import java.nio.charset.Charset
+
+import scala.concurrent.ExecutionContext.Implicits._
+import scala.concurrent.future
+
 import com.typesafe.scalalogging.slf4j.Logging
+
 import io.netty.bootstrap.ServerBootstrap
 import io.netty.channel.ChannelHandler.Sharable
 import io.netty.channel.ChannelHandlerContext
@@ -14,11 +20,12 @@ import io.netty.handler.codec.http.HttpContentCompressor
 import io.netty.handler.codec.http.HttpRequest
 import io.netty.handler.codec.http.HttpRequestDecoder
 import io.netty.handler.codec.http.HttpResponseEncoder
-import io.netty.handler.codec.http.DefaultHttpResponse
-import io.netty.handler.codec.http.HttpVersion
-import io.netty.handler.codec.http.HttpResponseStatus
-import io.netty.buffer.Unpooled
-import java.nio.charset.Charset
+import net.abhinavsarkar.ircsearch.lucene.Indexer
+import net.abhinavsarkar.ircsearch.lucene.Searcher
+import net.abhinavsarkar.ircsearch.model.IndexRequest
+import net.abhinavsarkar.ircsearch.model.SearchRequest
+import net.liftweb.json.DefaultFormats
+import net.liftweb.json.Serialization
 
 object Server extends App with Logging {
 
@@ -31,13 +38,12 @@ object Server extends App with Logging {
 
     val httpRequestRouter = new HttpRequestRouter {
       val Echo = "^/echo$".r
+      val Index = "^/index$".r
+      val Search = "^/search$".r
       def route = {
-        case Echo() => new HttpRequestHandler {
-          override def messageReceived(ctx: ChannelHandlerContext, request: HttpRequest) {
-            val content = request.getContent().toString(Charset.forName("UTF-8"))
-            logRequest(ctx, request, sendSuccess(ctx, request, content))
-          }
-        }
+        case Echo() => EchoHandler
+        case Index() => IndexHandler
+        case Search() => SearchHandler
       }
     }
 
@@ -58,7 +64,8 @@ object Server extends App with Logging {
     Runtime.getRuntime.addShutdownHook(
       new Thread("ShutdownHook") {
         override def run {
-          stopServer(server);
+          stopServer(server)
+          IndexHandler.stop
         }
       })
 
@@ -67,7 +74,8 @@ object Server extends App with Logging {
     } catch {
       case e : Exception => {
         logger.error("Exception while running server. Stopping server", e)
-        stopServer(server);
+        stopServer(server)
+        IndexHandler.stop
       }
     }
   }
@@ -78,4 +86,38 @@ object Server extends App with Logging {
     logger.info("Stopped server")
   }
 
+}
+
+@Sharable
+object EchoHandler extends HttpRequestHandler {
+  override def messageReceived(ctx: ChannelHandlerContext, request: HttpRequest) {
+    val content = request.getContent().toString(Charset.forName("UTF-8"))
+    logRequest(ctx, request, sendSuccess(ctx, request, content))
+  }
+}
+
+@Sharable
+object IndexHandler extends HttpRequestHandler {
+  implicit val formats = DefaultFormats
+  lazy val indexer = { val indexer = new Indexer; indexer.start; indexer }
+  override def messageReceived(ctx: ChannelHandlerContext, request: HttpRequest) {
+    future {
+      val content = request.getContent().toString(Charset.forName("UTF-8"))
+      val indexRequest = Serialization.read[IndexRequest](content)
+      indexer.index(indexRequest)
+    }
+    logRequest(ctx, request, sendDefaultResponse(ctx, request))
+  }
+  def stop = indexer.stop
+}
+
+@Sharable
+object SearchHandler extends HttpRequestHandler {
+  implicit val formats = DefaultFormats
+  override def messageReceived(ctx: ChannelHandlerContext, request: HttpRequest) {
+    val content = request.getContent().toString(Charset.forName("UTF-8"))
+    val searchRequest = Serialization.read[SearchRequest](content)
+    val searchResult = Searcher.search(searchRequest)
+    logRequest(ctx, request, sendSuccess(ctx, request, Serialization.write(searchResult)))
+  }
 }
