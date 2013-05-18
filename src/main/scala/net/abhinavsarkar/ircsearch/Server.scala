@@ -187,22 +187,31 @@ class IndexHandler(indexer: Indexer) extends HttpRequestHandler {
 object SearchHandler extends HttpRequestHandler {
   implicit val formats = DefaultFormats
   override def messageReceived(ctx: ChannelHandlerContext, request: HttpRequest) {
-    val method = request.getMethod()
-    val searchRequest = if (HttpMethod.POST.equals(method)) {
-      val content = request.getContent().toString(Charset.forName("UTF-8"))
-      Serialization.read[SearchRequest](content)
-    } else if (HttpMethod.GET.equals(method)) {
-      val params = new QueryStringDecoder(request.getUri).getParameters
-      val server = params("server")(0)
-      val channel = params("channel")(0)
-      val botName = params("botName")(0)
-      val query = params("query")(0)
-      new SearchRequest(server, channel, botName, query)
-    } else {
-      throw new UnsupportedOperationException("HTTP method " + method + " is not supported")
-    }
+    future {
+      val method = request.getMethod()
+      val searchRequest = if (HttpMethod.POST.equals(method)) {
+        val content = request.getContent().toString(Charset.forName("UTF-8"))
+        Serialization.read[SearchRequest](content)
+      } else if (HttpMethod.GET.equals(method)) {
+        val params = new QueryStringDecoder(request.getUri).getParameters.toMap
+        val server = params("server")(0)
+        val channel = params("channel")(0)
+        val botName = params("botName")(0)
+        val query = params("query")(0)
+        val page = params.get("page").collect({ case l => l.get(0) })
+        val pageSize = params.get("pageSize").collect({ case l => l.get(0) })
+        var sr = new SearchRequest(server, channel, botName, query)
+        if (page.isDefined)
+          sr = sr.copy(page = page.get.toInt)
+        if (pageSize.isDefined)
+          sr = sr.copy(pageSize = pageSize.get.toInt)
+        sr
+      } else {
+        throw new UnsupportedOperationException("HTTP method " + method + " is not supported")
+      }
 
-    val searchResult = Searcher.search(searchRequest)
-    logRequest(ctx, request, sendSuccess(ctx, request, Serialization.write(searchResult)))
+      val searchResult = Searcher.search(searchRequest)
+      logRequest(ctx, request, sendSuccess(ctx, request, Serialization.write(searchResult)))
+    } onFailure { case e : Exception => logger.error("Error", e) }
   }
 }

@@ -32,12 +32,12 @@ class Indexer extends Logging {
 
   import Indexer._
 
-  private val indexQueue = new LinkedBlockingQueue[IndexRequest]
+  private val indexQueue = new LinkedBlockingQueue[IndexRequest](10000)
   private val scheduler = Executors.newSingleThreadScheduledExecutor
   private val runLock = new ReentrantLock
   private var runFuture : Future[_] = null
 
-  def index(indexRequest : IndexRequest) = indexQueue.offer(indexRequest)
+  def index(indexRequest : IndexRequest) = indexQueue.put(indexRequest)
 
   def start {
     logger.info("Starting indexer")
