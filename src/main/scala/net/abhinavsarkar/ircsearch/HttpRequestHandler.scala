@@ -1,21 +1,19 @@
 package net.abhinavsarkar.ircsearch
 
-import io.netty.channel.ChannelInboundMessageHandlerAdapter
-import io.netty.handler.codec.http.HttpRequest
 import com.typesafe.scalalogging.slf4j.Logging
-import io.netty.channel.ChannelHandlerContext
-import io.netty.handler.codec.http.HttpResponse
-import io.netty.channel.ChannelFuture
-import io.netty.handler.codec.http.HttpHeaders.isKeepAlive
-import io.netty.handler.codec.http.HttpHeaders.Names._
-import io.netty.handler.codec.http.HttpHeaders
-import io.netty.channel.ChannelFutureListener
-import io.netty.handler.codec.http.DefaultHttpResponse
-import io.netty.handler.codec.http.HttpResponseStatus._
-import io.netty.handler.codec.http.HttpVersion.HTTP_1_1;
-import io.netty.handler.codec.http.HttpVersion
-import io.netty.handler.codec.http.HttpResponseStatus
+
 import io.netty.buffer.Unpooled
+import io.netty.channel.ChannelFutureListener
+import io.netty.channel.ChannelHandlerContext
+import io.netty.channel.ChannelInboundMessageHandlerAdapter
+import io.netty.handler.codec.http.DefaultHttpResponse
+import io.netty.handler.codec.http.HttpHeaders
+import io.netty.handler.codec.http.HttpHeaders.Names._
+import io.netty.handler.codec.http.HttpHeaders.isKeepAlive
+import io.netty.handler.codec.http.HttpRequest
+import io.netty.handler.codec.http.HttpResponse
+import io.netty.handler.codec.http.HttpResponseStatus._
+import io.netty.handler.codec.http.HttpVersion.HTTP_1_1
 
 
 trait HttpRequestHandler extends ChannelInboundMessageHandlerAdapter[HttpRequest] with Logging {
@@ -34,7 +32,7 @@ trait HttpRequestHandler extends ChannelInboundMessageHandlerAdapter[HttpRequest
   }
 
   protected def sendSuccess(ctx : ChannelHandlerContext, request : HttpRequest, body : String) : HttpResponse = {
-    val response = new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK)
+    val response = new DefaultHttpResponse(HTTP_1_1, OK)
     response.setContent(Unpooled.copiedBuffer(body.getBytes))
     response.setHeader(CONTENT_TYPE, "application/json")
     writeResponse(ctx, request, response)

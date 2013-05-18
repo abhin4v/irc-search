@@ -1,6 +1,12 @@
 package net.abhinavsarkar.ircsearch.model
 
 
+object ChatLine {
+  val USER = "user"
+  val TS = "ts"
+  val MSG = "msg"
+}
+
 case class ChatLine(user : String, timestamp : Long, message : String)
 
 case class IndexRequest(

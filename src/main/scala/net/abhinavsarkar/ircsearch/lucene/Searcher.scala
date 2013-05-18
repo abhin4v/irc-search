@@ -1,29 +1,27 @@
 package net.abhinavsarkar.ircsearch.lucene
 
-import com.typesafe.scalalogging.slf4j.Logging
-import org.apache.lucene.search.IndexSearcher
 import java.io.File
-import org.apache.lucene.index.IndexReader
-import org.apache.lucene.store.FSDirectory
-import org.apache.lucene.analysis.Analyzer
-import org.apache.lucene.queryparser.classic.QueryParser
-import org.apache.lucene.search.Query
-import scala.collection.immutable.Set
-import org.apache.lucene.search.BooleanQuery
-import org.apache.lucene.search.TermQuery
-import org.apache.lucene.search.BooleanClause
-import org.apache.lucene.search.QueryWrapperFilter
-import org.apache.lucene.search.Filter
-import net.abhinavsarkar.ircsearch.model.SearchRequest
-import net.abhinavsarkar.ircsearch.model.SearchResult
-import org.apache.lucene.search.Sort
-import org.apache.lucene.search.SortField
+
 import scala.collection.JavaConversions._
 import scala.collection.mutable
-import net.abhinavsarkar.ircsearch.model.ChatLine
-import net.abhinavsarkar.ircsearch.model.ChatLine
-import net.abhinavsarkar.ircsearch.model.SearchResult
-import net.abhinavsarkar.ircsearch.model.SearchResult
+
+import org.apache.lucene.analysis.Analyzer
+import org.apache.lucene.index.IndexReader
+import org.apache.lucene.queryparser.classic.QueryParser
+import org.apache.lucene.search.BooleanClause
+import org.apache.lucene.search.BooleanQuery
+import org.apache.lucene.search.FilteredQuery
+import org.apache.lucene.search.IndexSearcher
+import org.apache.lucene.search.Query
+import org.apache.lucene.search.QueryWrapperFilter
+import org.apache.lucene.search.Sort
+import org.apache.lucene.search.SortField
+import org.apache.lucene.search.TermQuery
+import org.apache.lucene.store.FSDirectory
+
+import com.typesafe.scalalogging.slf4j.Logging
+
+import net.abhinavsarkar.ircsearch.model._
 
 object Searcher extends Logging {
 
@@ -35,9 +33,9 @@ object Searcher extends Logging {
   }
 
   private def mkQueryParser(analyzer : Analyzer) =
-    new QueryParser(Indexer.LUCENE_VERSION, "message", analyzer)
+    new QueryParser(Indexer.LUCENE_VERSION, ChatLine.MSG, analyzer)
 
-  private def filterifyQuery(query : Query, mustFields : Set[String]) : (Query, Option[Filter]) =
+  private def filterifyQuery(query : Query, mustFields : Set[String]) : Query =
     query match {
       case boolQuery: BooleanQuery => {
         val newQuery = new BooleanQuery
@@ -58,9 +56,12 @@ object Searcher extends Logging {
           }
         }
 
-        (newQuery, if (filterQuery.clauses.isEmpty) None else Some(new QueryWrapperFilter(filterQuery)))
+        if (filterQuery.clauses.isEmpty)
+          newQuery
+        else
+          new FilteredQuery(newQuery, new QueryWrapperFilter(filterQuery))
       }
-      case _ => (query, None)
+      case _ => query
     }
 
   def search(searchRequest : SearchRequest) : SearchResult = {
@@ -71,9 +72,9 @@ object Searcher extends Logging {
     val analyzer = Indexer.mkAnalyzer
     try {
       val queryParser = mkQueryParser(analyzer)
-      val (query, filter) = filterifyQuery(queryParser.parse(searchRequest.query), Set("user"))
-      logger.debug("Query: {}, Filter: {}", query, filter)
-      val (totalResults, results) = doSearch(indexDir, query, filter, searchRequest.pageSize)
+      val query = filterifyQuery(queryParser.parse(searchRequest.query), Set(ChatLine.USER))
+      logger.debug("Query: {}", query)
+      val (totalResults, results) = doSearch(indexDir, query, searchRequest.pageSize)
       val searchResults = SearchResult.fromSearchRequest(searchRequest)
         .copy(totalResults = totalResults, chatLines = results.map(_._1))
       logger.debug("Search results: {}", searchResults)
@@ -83,18 +84,18 @@ object Searcher extends Logging {
     }
   }
 
-  private def doSearch(indexDir : String, query : Query, filter : Option[Filter], maxHits : Int)
+  private def doSearch(indexDir : String, query : Query, maxHits : Int)
     : (Int, List[(ChatLine, Float)]) = {
     val indexSearcher = mkIndexSearcher(indexDir)
-    val topDocs = indexSearcher.search(query, filter.orNull, maxHits,
-        new Sort(SortField.FIELD_SCORE, new SortField("timestamp", SortField.Type.LONG, true)))
+    val topDocs = indexSearcher.search(query, maxHits,
+        new Sort(SortField.FIELD_SCORE, new SortField(ChatLine.TS, SortField.Type.LONG, true)))
     val docs = topDocs.scoreDocs.map { sd =>
       val score = sd.score
       val doc = indexSearcher.doc(sd.doc).getFields.foldLeft(mutable.Map[String, String]()) {
         (map, field) => map += (field.name -> field.stringValue)
       }
 
-      val chatLine = new ChatLine(doc("user"), doc("timestamp").toLong, doc("message"))
+      val chatLine = new ChatLine(doc(ChatLine.USER), doc(ChatLine.TS).toLong, doc(ChatLine.MSG))
       (chatLine, score)
     }
     (topDocs.totalHits, docs.toList)

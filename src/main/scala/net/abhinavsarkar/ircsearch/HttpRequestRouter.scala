@@ -1,7 +1,6 @@
 package net.abhinavsarkar.ircsearch
 
 import io.netty.channel.ChannelHandler.Sharable
-import java.util.regex.Pattern
 import io.netty.channel.ChannelHandlerContext
 import io.netty.handler.codec.http.HttpRequest
 
@@ -15,12 +14,12 @@ abstract class HttpRequestRouter extends HttpRequestHandler {
       val uri = request.getUri
       if (route.isDefinedAt(uri)) {
         val routeHandler = route.apply(uri)
-        ctx.pipeline.addLast("handler", routeHandler)
+        ctx.pipeline.addLast("httphandler", routeHandler)
         try {
             ctx.nextInboundMessageBuffer.add(request)
             ctx.fireInboundBufferUpdated
         } finally {
-            ctx.pipeline.remove("handler")
+            ctx.pipeline.remove("httphandler")
         }
       } else {
         logRequest(ctx, request, sendNotFound(ctx, request))

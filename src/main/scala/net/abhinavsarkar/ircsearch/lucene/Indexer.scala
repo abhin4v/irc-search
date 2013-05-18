@@ -16,18 +16,17 @@ import org.apache.lucene.analysis.en.EnglishAnalyzer
 import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper
 import org.apache.lucene.analysis.standard.StandardAnalyzer
 import org.apache.lucene.document.Field
-import org.apache.lucene.document.FieldType
-import org.apache.lucene.document.FieldType.NumericType
-import org.apache.lucene.index.IndexReader
+import org.apache.lucene.document.LongField
+import org.apache.lucene.document.StringField
+import org.apache.lucene.document.TextField
 import org.apache.lucene.index.IndexWriter
 import org.apache.lucene.index.IndexWriterConfig
-import org.apache.lucene.search.IndexSearcher
 import org.apache.lucene.store.FSDirectory
 import org.apache.lucene.util.Version
 
 import com.typesafe.scalalogging.slf4j.Logging
 
-import net.abhinavsarkar.ircsearch.model.IndexRequest
+import net.abhinavsarkar.ircsearch.model._
 
 class Indexer extends Logging {
 
@@ -47,7 +46,9 @@ class Indexer extends Logging {
         def run {
           try {
             runLock.lock
-            logger.debug("Running indexer")
+            if (indexQueue.isEmpty)
+              return
+
             val indexReqs = new ArrayList[IndexRequest]
             indexQueue.drainTo(indexReqs)
             doIndex(indexReqs.toList)
@@ -57,7 +58,7 @@ class Indexer extends Logging {
             runLock.unlock
           }
         }},
-      0, 10, TimeUnit.SECONDS)
+      0, 1, TimeUnit.SECONDS)
   }
 
   def stop {
@@ -85,9 +86,9 @@ class Indexer extends Logging {
       try {
         for (indexRequest <- indexRequestBatch;
              chatLine     <- indexRequest.chatLines) {
-          val tsField = mkField("timestamp", chatLine.timestamp.toString, false)
-          val userField = mkField("user", chatLine.user, true)
-          val msgField = mkField("message", chatLine.message)
+          val tsField = new LongField(ChatLine.TS, chatLine.timestamp, Field.Store.YES)
+          val userField = new StringField(ChatLine.USER, chatLine.user, Field.Store.YES)
+          val msgField = new TextField(ChatLine.MSG, chatLine.message, Field.Store.YES)
           indexWriter.addDocument(List(tsField, userField, msgField), analyzer)
           logger.debug("Indexed : [{} {} {}] [{}] {}: {}",
               server, channel, botName, chatLine.timestamp.toString, chatLine.user, chatLine.message)
@@ -108,8 +109,8 @@ object Indexer {
   def mkAnalyzer : Analyzer = {
     val defAnalyzer = new StandardAnalyzer(LUCENE_VERSION)
     val fieldAnalyzers = Map(
-        "user" -> new KeywordAnalyzer,
-        "message" -> new EnglishAnalyzer(LUCENE_VERSION))
+        ChatLine.USER -> new KeywordAnalyzer,
+        ChatLine.MSG -> new EnglishAnalyzer(LUCENE_VERSION))
 
     new PerFieldAnalyzerWrapper(defAnalyzer, fieldAnalyzers)
   }
@@ -124,15 +125,5 @@ object Indexer {
 
   def getIndexDir(server : String, channel : String, botName : String) : String =
     s"index-$server-$channel-$botName"
-
-  private def mkField(name : String, value : String,
-      tokenized : Boolean = true, numericType : Option[NumericType] = None) : Field = {
-    val fieldType = new FieldType
-    fieldType.setStored(true)
-    fieldType.setIndexed(true)
-    fieldType.setTokenized(tokenized)
-    numericType.foreach { fieldType.setNumericType }
-    new Field(name, value, fieldType)
-  }
 
 }
