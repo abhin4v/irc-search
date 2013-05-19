@@ -18,16 +18,28 @@ case class IndexRequest(
 
 case class SearchRequest(
     server : String, channel : String, botName : String, query: String,
-    page : Int = 0, pageSize : Int = 10)
+    page : Int = 0, pageSize : Int = 10, details : Boolean = false)
 
 case class SearchResult(
     server : String, channel : String, botName : String, query: String,
-    page : Int, pageSize : Int, totalResults : Int, chatLines : List[ChatLine])
+    page : Int, pageSize : Int, totalResults : Int, chatLines : List[ChatLine]) {
+  def toSimpleSearchResult =
+    SimpleSearchResult(server, channel, botName, query, page, pageSize, totalResults,
+      chatLines map {
+        case mline@ChatLine(_, _, _, contextBefore, contextAfter) =>
+          ((contextBefore :+ mline) ++ contextAfter) map { line =>
+            List(line.timestamp.toString, line.user, line.message)
+          }
+      })
+}
 
 object SearchResult {
   def fromSearchRequest(searchRequest : SearchRequest) = searchRequest match {
-    case SearchRequest(server, channel, botName, query, page, pageSize) =>
+    case SearchRequest(server, channel, botName, query, page, pageSize, _) =>
       new SearchResult(server, channel, botName, query, page, pageSize, 0, List())
   }
 }
 
+case class SimpleSearchResult(
+    server : String, channel : String, botName : String, query: String,
+    page : Int, pageSize : Int, totalResults : Int, lines : List[List[List[String]]])

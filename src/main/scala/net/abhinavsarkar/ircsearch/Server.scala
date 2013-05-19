@@ -199,21 +199,30 @@ object SearchHandler extends HttpRequestHandler {
         val query = params("query")(0)
         val page = params.get("page").collect({ case l => l.get(0) })
         val pageSize = params.get("pageSize").collect({ case l => l.get(0) })
+        val details = params.get("details").collect({ case l => l.get(0) })
+
         var sr = new SearchRequest(server, channel, botName, query)
         if (page.isDefined)
           sr = sr.copy(page = page.get.toInt)
         if (pageSize.isDefined)
           sr = sr.copy(pageSize = pageSize.get.toInt)
+        if (details.isDefined)
+          sr = sr.copy(details = details.get.toBoolean)
         sr
       } else {
         throw new UnsupportedOperationException("HTTP method " + method + " is not supported")
       }
 
-      Searcher.search(searchRequest)
+      (searchRequest, Searcher.search(searchRequest))
     }
     f onSuccess {
-      case searchResult =>
-        logRequest(ctx, request, sendSuccess(ctx, request, Serialization.write(searchResult)))
+      case (searchRequest, searchResult) =>
+        logRequest(ctx, request,
+          sendSuccess(ctx, request,
+            if (searchRequest.details)
+              Serialization.write(searchResult)
+            else
+              Serialization.write(searchResult.toSimpleSearchResult)))
     }
     f onFailure { case e : Exception => {
       logger.error("Error", e)
