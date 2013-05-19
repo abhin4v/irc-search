@@ -33,21 +33,27 @@ object Searcher extends Logging {
 
   val MaxHits = 1000
 
-  val readers = mutable.Map[String, SearcherManager]()
+  private val searcherMgrs = mutable.Map[String, SearcherManager]()
 
-  private def mkIndexSearcher(dirPath : String) : SearcherManager = {
+  def close {
+    for (searcherMgr <- searcherMgrs.values)
+      searcherMgr.close
+    logger.info("Closed Searcher")
+  }
+
+  private def getSearcherMgr(dirPath : String) : SearcherManager = {
     synchronized {
-      if (!(readers contains dirPath)) {
+      if (!(searcherMgrs contains dirPath)) {
         val indexDir = new File(dirPath)
         assert(indexDir.exists && indexDir.isDirectory)
 
         val dir = FSDirectory.open(indexDir)
-        readers += (dirPath -> new SearcherManager(dir, new SearcherFactory))
+        searcherMgrs += (dirPath -> new SearcherManager(dir, new SearcherFactory))
 
       }
     }
 
-    readers(dirPath)
+    searcherMgrs(dirPath)
   }
 
   private def mkQueryParser(analyzer : Analyzer) =
@@ -126,7 +132,7 @@ object Searcher extends Logging {
 
   private def doSearch(indexDir : String, query : Query, page : Int, pageSize : Int)
     : (Int, List[(ChatLine, Float)]) = {
-    val searcherMgr = mkIndexSearcher(indexDir)
+    val searcherMgr = getSearcherMgr(indexDir)
     searcherMgr.maybeRefresh
     val indexSearcher = searcherMgr.acquire()
     try {

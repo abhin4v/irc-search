@@ -55,21 +55,24 @@ object Server extends App with Logging {
         }})
       .localAddress(new InetSocketAddress(port))
 
+    val cleanup = { () =>
+      stopServer(server)
+      Indexer.stop
+      Searcher.close
+    }
+
     Runtime.getRuntime.addShutdownHook(
       new Thread("ShutdownHook") {
-        override def run {
-          stopServer(server)
-          UnifiedHandler.stop
-        }
+        override def run = cleanup()
       })
 
     try {
+      Indexer.start
       server.bind().sync.channel.closeFuture.sync
     } catch {
       case e : Exception => {
         logger.error("Exception while running server. Stopping server", e)
-        stopServer(server)
-        UnifiedHandler.stop
+        cleanup()
       }
     }
   }
@@ -85,20 +88,16 @@ object Server extends App with Logging {
 @Sharable
 object UnifiedHandler extends ChannelInboundByteHandlerAdapter {
 
-  lazy val indexer = { val indexer = new Indexer; indexer.start; indexer }
-
   val httpRequestRouter = new HttpRequestRouter {
     val Echo = "^/echo$".r
     val Index = "^/index$".r
     val Search = "^/search.*".r
     def route = {
       case Echo() => EchoHandler
-      case Index() => new IndexHandler(indexer)
+      case Index() => new IndexHandler
       case Search() => SearchHandler
     }
   }
-
-  def stop = indexer.stop
 
   override def inboundBufferUpdated(ctx : ChannelHandlerContext, in: ByteBuf) {
     if (in.readableBytes() < 5) {
@@ -119,7 +118,7 @@ object UnifiedHandler extends ChannelInboundByteHandlerAdapter {
       ctx.pipeline
         .addLast("framedecoder", new DelimiterBasedFrameDecoder(1048576, Delimiters.lineDelimiter() : _*))
         .addLast("decoder", new StringDecoder(Charset.forName("UTF-8")))
-        .addLast("csvhandler", new TcpIndexHandler(indexer))
+        .addLast("csvhandler", new TcpIndexHandler)
         .remove(this)
     }
     ctx.nextInboundByteBuffer.writeBytes(in)
@@ -140,7 +139,7 @@ object UnifiedHandler extends ChannelInboundByteHandlerAdapter {
 
 }
 
-class TcpIndexHandler(indexer: Indexer) extends ChannelInboundMessageHandlerAdapter[String] {
+class TcpIndexHandler extends ChannelInboundMessageHandlerAdapter[String] {
   var server: String = null
   var channel : String = null
   var botName : String = null
@@ -156,7 +155,7 @@ class TcpIndexHandler(indexer: Indexer) extends ChannelInboundMessageHandlerAdap
       botName = values(2)
       inited = true
     } else {
-      indexer.index(new IndexRequest(server, channel, botName,
+      Indexer.index(new IndexRequest(server, channel, botName,
           List(ChatLine(values(0), values(1).toLong, values(2)))))
     }
   }
@@ -171,13 +170,13 @@ object EchoHandler extends HttpRequestHandler {
 }
 
 @Sharable
-class IndexHandler(indexer: Indexer) extends HttpRequestHandler {
+class IndexHandler extends HttpRequestHandler {
   implicit val formats = DefaultFormats
   override def messageReceived(ctx: ChannelHandlerContext, request: HttpRequest) {
     future {
       val content = request.getContent().toString(Charset.forName("UTF-8"))
       val indexRequest = Serialization.read[IndexRequest](content)
-      indexer.index(indexRequest)
+      Indexer.index(indexRequest)
     }
     logRequest(ctx, request, sendDefaultResponse(ctx, request))
   }
@@ -187,7 +186,7 @@ class IndexHandler(indexer: Indexer) extends HttpRequestHandler {
 object SearchHandler extends HttpRequestHandler {
   implicit val formats = DefaultFormats
   override def messageReceived(ctx: ChannelHandlerContext, request: HttpRequest) {
-    future {
+    val f = future {
       val method = request.getMethod()
       val searchRequest = if (HttpMethod.POST.equals(method)) {
         val content = request.getContent().toString(Charset.forName("UTF-8"))
@@ -210,8 +209,12 @@ object SearchHandler extends HttpRequestHandler {
         throw new UnsupportedOperationException("HTTP method " + method + " is not supported")
       }
 
-      val searchResult = Searcher.search(searchRequest)
-      logRequest(ctx, request, sendSuccess(ctx, request, Serialization.write(searchResult)))
-    } onFailure { case e : Exception => logger.error("Error", e) }
+      Searcher.search(searchRequest)
+    }
+    f onSuccess {
+      case searchResult =>
+        logRequest(ctx, request, sendSuccess(ctx, request, Serialization.write(searchResult)))
+    }
+    f onFailure { case e : Exception => logger.error("Error", e) }
   }
 }
