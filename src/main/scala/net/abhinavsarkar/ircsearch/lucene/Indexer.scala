@@ -4,11 +4,15 @@ import java.io.File
 import java.util.ArrayList
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
-import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.PriorityBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantLock
+
 import scala.collection.JavaConversions._
+import scala.collection.Seq
 import scala.collection.mutable
+import scala.math.Ordered
+
 import org.apache.lucene.analysis.Analyzer
 import org.apache.lucene.analysis.core.KeywordAnalyzer
 import org.apache.lucene.analysis.en.EnglishAnalyzer
@@ -22,16 +26,40 @@ import org.apache.lucene.index.IndexWriter
 import org.apache.lucene.index.IndexWriterConfig
 import org.apache.lucene.store.FSDirectory
 import org.apache.lucene.util.Version
+
 import com.typesafe.scalalogging.slf4j.Logging
+
 import net.abhinavsarkar.ircsearch.model._
-import java.util.concurrent.BlockingDeque
-import java.util.concurrent.BlockingQueue
 
 object Indexer extends Logging {
 
-  val LUCENE_VERSION = Version.LUCENE_43
+  case class IndexRecord(
+      server : String, channel : String, botName : String, chatLine : ChatLine,
+      indexed : Boolean = false)
+      extends Ordered[IndexRecord] {
+    def compare(that : IndexRecord) = {
+      val diff = this.chatLine.timestamp - that.chatLine.timestamp
+      if (diff > 0) 1 else if (diff < 0) -1 else 0
+    }
+  }
 
-  private val indexReqQueue = new LinkedBlockingQueue[IndexRequest](10000)
+  object IndexRecord {
+
+    def fromIndexRequest(indexRequest : IndexRequest) = {
+      val IndexRequest(server, channel, botName, chatLines) = indexRequest
+      for {
+        chatLine <- chatLines
+      } yield new IndexRecord(server, channel, botName, chatLine)
+    }
+
+  }
+
+  val LUCENE_VERSION = Version.LUCENE_43
+  val ContextSize = 2
+  val ContextDurationSecs = 20
+  val IndexingDurationSecs = 10
+
+  private val indexQueue = new PriorityBlockingQueue[IndexRecord](10000)
   private val scheduler = Executors.newScheduledThreadPool(2)
   private val runLock = new ReentrantLock
   private var indexingFuture : Future[_] = null
@@ -55,7 +83,9 @@ object Indexer extends Logging {
     val defAnalyzer = new StandardAnalyzer(LUCENE_VERSION)
     val fieldAnalyzers = Map(
         ChatLine.USER -> new KeywordAnalyzer,
-        ChatLine.MSG -> new EnglishAnalyzer(LUCENE_VERSION))
+        ChatLine.MSG -> new EnglishAnalyzer(LUCENE_VERSION),
+        ChatLine.CTXB -> new EnglishAnalyzer(LUCENE_VERSION),
+        ChatLine.CTXA -> new EnglishAnalyzer(LUCENE_VERSION))
 
     new PerFieldAnalyzerWrapper(defAnalyzer, fieldAnalyzers)
   }
@@ -79,7 +109,8 @@ object Indexer extends Logging {
   def getIndexDir(server : String, channel : String, botName : String) : String =
     s"index-$server-$channel-$botName"
 
-  def index(indexRequest : IndexRequest) = indexReqQueue.put(indexRequest)
+  def index(indexRequest : IndexRequest) =
+    IndexRecord.fromIndexRequest(indexRequest).foreach(indexQueue.put)
 
   private def doInLock(f : => Unit) {
     try {
@@ -98,17 +129,59 @@ object Indexer extends Logging {
       }
     }}
 
-  def indexReqStream : Stream[IndexRequest] = Stream.cons(indexReqQueue.take, indexReqStream)
+  def schedule(initialDelay : Int, delay : Int, unit : TimeUnit)(f : => Unit) = {
+    scheduler.scheduleWithFixedDelay(f, initialDelay, delay, unit)
+  }
+
+  def fillContext(rec: IndexRecord, recs: Seq[IndexRecord], idx : Int) = {
+    rec.copy(chatLine =
+      rec.chatLine.copy(
+        contextBefore = recs.slice(idx - ContextSize, idx).map(_.chatLine)
+        .filter(_.timestamp >= rec.chatLine.timestamp - ContextDurationSecs * 1000)
+        .toList,
+        contextAfter = recs.slice(idx + 1, 2 * ContextSize + 1).map(_.chatLine)
+        .filter(_.timestamp <= rec.chatLine.timestamp + ContextDurationSecs * 1000)
+        .toList))
+  }
 
   def start {
     logger.info("Starting indexer")
-    indexingFuture = scheduler.submit {
-      for (indexReq <- indexReqStream)
-        doInLock {
-          doIndex(List(indexReq))
+    indexingFuture = schedule(0, IndexingDurationSecs.max(ContextDurationSecs), TimeUnit.SECONDS) {
+      if (!indexQueue.isEmpty) {
+        val indexRecs = new ArrayList[IndexRecord]
+        indexQueue drainTo indexRecs
+        val indexRecsMap = indexRecs groupBy { r => (r.server, r.channel, r.botName) }
+
+        val windowSize = 2 * ContextSize + 1
+        for (indexRecBatch <- indexRecsMap.values) {
+          for (recs <- indexRecBatch.sliding(windowSize)) {
+            if (recs.size == windowSize) {
+              doInLock {
+                doIndex(fillContext(recs(ContextSize), recs, ContextSize))
+              }
+            } else if (recs.size < ContextSize + 1) {
+              recs.foreach(indexQueue.offer)
+            } else {
+              recs.zipWithIndex.drop(ContextSize).foreach { r =>
+                doInLock {
+                  doIndex(fillContext(r._1, recs, r._2))
+                }
+              }
+            }
+          }
+
+          if (indexRecBatch.size > windowSize) {
+            indexRecBatch.slice(indexRecBatch.length - 2 * ContextSize, indexRecBatch.length)
+            .zipWithIndex
+            .map { r => if (r._2 < ContextSize) r._1.copy(indexed = true) else r._1 }
+            .foreach(indexQueue.put)
+          }
         }
+      }
     }
-    flushFuture = scheduler.scheduleWithFixedDelay(doInLock(flush), 0, 10, TimeUnit.SECONDS)
+    flushFuture = schedule(0, 10, TimeUnit.SECONDS) {
+      doInLock(flush)
+    }
   }
 
   def stop {
@@ -126,23 +199,22 @@ object Indexer extends Logging {
     }
   }
 
-  private def doIndex(indexReqs: List[IndexRequest]) {
-    val indexRequests = indexReqs.groupBy { r =>
-      (r.server, r.channel, r.botName)
-    }
+  def ctxToStr(ctx : List[ChatLine]) =
+    ctx.map { line => s"${line.timestamp} ${line.user}: ${line.message}" }  mkString "\n"
 
-    for (((server, channel, botName), indexRequestBatch) <- indexRequests) {
+  private def doIndex(indexRecord: IndexRecord) {
+    val IndexRecord(server, channel, botName, chatLine, indexed) = indexRecord
+    if (!indexed) {
       val indexDir = getIndexDir(server, channel, botName)
       val indexWriter = getIndexWriter(indexDir)
-      for (indexRequest <- indexRequestBatch;
-           chatLine     <- indexRequest.chatLines) {
-        val tsField = new LongField(ChatLine.TS, chatLine.timestamp, Field.Store.YES)
-        val userField = new StringField(ChatLine.USER, chatLine.user, Field.Store.YES)
-        val msgField = new TextField(ChatLine.MSG, chatLine.message, Field.Store.YES)
-        indexWriter.addDocument(List(tsField, userField, msgField), indexWriter.getAnalyzer)
-        logger.debug("Indexed : [{} {} {}] [{}] {}: {}",
-            server, channel, botName, chatLine.timestamp.toString, chatLine.user, chatLine.message)
-      }
+      val ts = new LongField(ChatLine.TS, chatLine.timestamp, Field.Store.YES)
+      val user = new StringField(ChatLine.USER, chatLine.user, Field.Store.YES)
+      val msg = new TextField(ChatLine.MSG, chatLine.message, Field.Store.YES)
+      val ctxBfr = new TextField(ChatLine.CTXB, ctxToStr(chatLine.contextBefore), Field.Store.YES)
+      val ctxAft = new TextField(ChatLine.CTXA, ctxToStr(chatLine.contextAfter), Field.Store.YES)
+      indexWriter.addDocument(List(ts, user, msg, ctxBfr, ctxAft), indexWriter.getAnalyzer)
+      logger.debug("Indexed : [{} {} {}] [{}] {}: {}",
+          server, channel, botName, chatLine.timestamp.toString, chatLine.user, chatLine.message)
     }
   }
 

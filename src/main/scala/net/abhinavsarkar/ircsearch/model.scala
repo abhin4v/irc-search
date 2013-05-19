@@ -5,9 +5,13 @@ object ChatLine {
   val USER = "user"
   val TS = "ts"
   val MSG = "msg"
+  val CTXB = "ctxb"
+  val CTXA = "ctxa"
 }
 
-case class ChatLine(user : String, timestamp : Long, message : String)
+case class ChatLine(user : String, timestamp : Long, message : String,
+    contextBefore : List[ChatLine] = List(),
+    contextAfter : List[ChatLine] = List())
 
 case class IndexRequest(
     server : String, channel : String, botName : String, chatLines : List[ChatLine])

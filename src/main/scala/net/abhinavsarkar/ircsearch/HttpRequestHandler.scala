@@ -39,6 +39,14 @@ trait HttpRequestHandler extends ChannelInboundMessageHandlerAdapter[HttpRequest
     response
   }
 
+  protected def sendError(ctx : ChannelHandlerContext, request : HttpRequest, body : String) : HttpResponse = {
+    val response = new DefaultHttpResponse(HTTP_1_1, INTERNAL_SERVER_ERROR)
+    response.setContent(Unpooled.copiedBuffer(body.getBytes))
+    response.setHeader(CONTENT_TYPE, "text/plain")
+    writeResponse(ctx, request, response)
+    response
+  }
+
   protected def writeResponse(
       ctx : ChannelHandlerContext, request : HttpRequest, response : HttpResponse) {
     response.setHeader(CONTENT_LENGTH, response.getContent().readableBytes())

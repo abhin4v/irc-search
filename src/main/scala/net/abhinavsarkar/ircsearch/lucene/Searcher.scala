@@ -5,12 +5,13 @@ import java.text.ParseException
 import java.text.SimpleDateFormat
 
 import scala.collection.JavaConversions._
+import scala.collection.immutable.Map
 import scala.collection.mutable
 import scala.collection.mutable.Buffer
 
 import org.apache.lucene.analysis.Analyzer
 import org.apache.lucene.queries.ChainedFilter
-import org.apache.lucene.queryparser.classic.QueryParser
+import org.apache.lucene.queryparser.classic.MultiFieldQueryParser
 import org.apache.lucene.search.BooleanClause
 import org.apache.lucene.search.BooleanQuery
 import org.apache.lucene.search.Filter
@@ -32,6 +33,7 @@ import net.abhinavsarkar.ircsearch.model._
 object Searcher extends Logging {
 
   val MaxHits = 1000
+  val MessageFieldBoost = java.lang.Float.valueOf(2.0f)
 
   private val searcherMgrs = mutable.Map[String, SearcherManager]()
 
@@ -57,7 +59,9 @@ object Searcher extends Logging {
   }
 
   private def mkQueryParser(analyzer : Analyzer) =
-    new QueryParser(Indexer.LUCENE_VERSION, ChatLine.MSG, analyzer)
+    new MultiFieldQueryParser(Indexer.LUCENE_VERSION,
+        List(ChatLine.MSG, ChatLine.CTXB, ChatLine.CTXA).toArray, analyzer,
+        Map(ChatLine.MSG -> MessageFieldBoost))
 
   private def filterifyQuery(query : Query) : Query =
     query match {
@@ -130,6 +134,8 @@ object Searcher extends Logging {
     }
   }
 
+  private val DocFields = List(ChatLine.USER, ChatLine.TS, ChatLine.MSG, ChatLine.CTXB, ChatLine.CTXA)
+
   private def doSearch(indexDir : String, query : Query, page : Int, pageSize : Int)
     : (Int, List[(ChatLine, Float)]) = {
     val searcherMgr = getSearcherMgr(indexDir)
@@ -139,14 +145,22 @@ object Searcher extends Logging {
       val topDocs = indexSearcher.search(query, MaxHits.min((page + 1) * pageSize),
           new Sort(SortField.FIELD_SCORE, new SortField(ChatLine.TS, SortField.Type.LONG, true)))
       val docs = topDocs.scoreDocs
-        .drop(page * pageSize)
-        .map { sd =>
-          val score = sd.score
-          val doc = indexSearcher.doc(sd.doc).getFields.foldLeft(mutable.Map[String, String]()) {
-            (map, field) => map += (field.name -> field.stringValue)
+      .drop(page * pageSize)
+      .map { sd =>
+        val score = sd.score
+        val doc = indexSearcher.doc(sd.doc).getFields.foldLeft(mutable.Map[String, String]()) {
+          (map, field) => map += (field.name -> field.stringValue)
         }
 
-        val chatLine = new ChatLine(doc(ChatLine.USER), doc(ChatLine.TS).toLong, doc(ChatLine.MSG))
+        val List(user, timestamp, message, contextBefore, contextAfter) = DocFields.map(doc)
+
+        val LineRe = "(\\d+) (.*?): (.*)".r
+        val List(ctxBefore, ctxAfter) = List(contextBefore, contextAfter).map {
+          _.split('\n').filterNot(_.isEmpty).map {
+            case LineRe(timestamp, user, message) => new ChatLine(user, timestamp.toLong, message)
+          }}
+
+        val chatLine = new ChatLine(user, timestamp.toLong, message, ctxBefore.toList, ctxAfter.toList)
         (chatLine, score)
       }
       (topDocs.totalHits, docs.toList)

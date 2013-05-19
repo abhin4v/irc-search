@@ -215,6 +215,9 @@ object SearchHandler extends HttpRequestHandler {
       case searchResult =>
         logRequest(ctx, request, sendSuccess(ctx, request, Serialization.write(searchResult)))
     }
-    f onFailure { case e : Exception => logger.error("Error", e) }
+    f onFailure { case e : Exception => {
+      logger.error("Error", e)
+      logRequest(ctx, request, sendError(ctx, request, e.getMessage))
+    }}
   }
 }
