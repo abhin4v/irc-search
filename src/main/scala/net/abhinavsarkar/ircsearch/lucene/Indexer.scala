@@ -2,10 +2,7 @@ package net.abhinavsarkar.ircsearch.lucene
 
 import java.io.File
 import java.util.ArrayList
-import java.util.concurrent.Executors
-import java.util.concurrent.Future
-import java.util.concurrent.PriorityBlockingQueue
-import java.util.concurrent.TimeUnit
+import java.util.concurrent.{ Executors, Future, PriorityBlockingQueue, TimeUnit }
 import java.util.concurrent.locks.ReentrantLock
 
 import scala.collection.JavaConversions._
@@ -18,12 +15,8 @@ import org.apache.lucene.analysis.core.KeywordAnalyzer
 import org.apache.lucene.analysis.en.EnglishAnalyzer
 import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper
 import org.apache.lucene.analysis.standard.StandardAnalyzer
-import org.apache.lucene.document.Field
-import org.apache.lucene.document.LongField
-import org.apache.lucene.document.StringField
-import org.apache.lucene.document.TextField
-import org.apache.lucene.index.IndexWriter
-import org.apache.lucene.index.IndexWriterConfig
+import org.apache.lucene.document.{ Field, LongField, StringField, TextField }
+import org.apache.lucene.index.{ IndexWriter, IndexWriterConfig }
 import org.apache.lucene.store.FSDirectory
 import org.apache.lucene.util.Version
 
@@ -44,14 +37,12 @@ object Indexer extends Logging {
   }
 
   object IndexRecord {
-
     def fromIndexRequest(indexRequest : IndexRequest) = {
       val IndexRequest(server, channel, botName, chatLines) = indexRequest
       for {
         chatLine <- chatLines
       } yield new IndexRecord(server, channel, botName, chatLine)
     }
-
   }
 
   val LUCENE_VERSION = Version.LUCENE_43

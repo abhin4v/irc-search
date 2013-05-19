@@ -1,8 +1,7 @@
 package net.abhinavsarkar.ircsearch.lucene
 
 import java.io.File
-import java.text.ParseException
-import java.text.SimpleDateFormat
+import java.text.{ SimpleDateFormat,  ParseException }
 
 import scala.collection.JavaConversions._
 import scala.collection.immutable.Map
@@ -12,18 +11,9 @@ import scala.collection.mutable.Buffer
 import org.apache.lucene.analysis.Analyzer
 import org.apache.lucene.queries.ChainedFilter
 import org.apache.lucene.queryparser.classic.MultiFieldQueryParser
-import org.apache.lucene.search.BooleanClause
-import org.apache.lucene.search.BooleanQuery
-import org.apache.lucene.search.Filter
-import org.apache.lucene.search.FilteredQuery
-import org.apache.lucene.search.NumericRangeFilter
-import org.apache.lucene.search.Query
-import org.apache.lucene.search.QueryWrapperFilter
-import org.apache.lucene.search.SearcherFactory
-import org.apache.lucene.search.SearcherManager
-import org.apache.lucene.search.Sort
-import org.apache.lucene.search.SortField
-import org.apache.lucene.search.TermQuery
+import org.apache.lucene.search.{ BooleanClause, BooleanQuery,  Filter, FilteredQuery,
+                                  NumericRangeFilter, Query, QueryWrapperFilter, SearcherFactory,
+                                  SearcherManager,  Sort, SortField, TermQuery }
 import org.apache.lucene.store.FSDirectory
 
 import com.typesafe.scalalogging.slf4j.Logging

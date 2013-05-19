@@ -3,15 +3,10 @@ package net.abhinavsarkar.ircsearch
 import com.typesafe.scalalogging.slf4j.Logging
 
 import io.netty.buffer.Unpooled
-import io.netty.channel.ChannelFutureListener
-import io.netty.channel.ChannelHandlerContext
-import io.netty.channel.ChannelInboundMessageHandlerAdapter
-import io.netty.handler.codec.http.DefaultHttpResponse
-import io.netty.handler.codec.http.HttpHeaders
+import io.netty.channel.{ ChannelFutureListener, ChannelHandlerContext, ChannelInboundMessageHandlerAdapter }
+import io.netty.handler.codec.http.{ DefaultHttpResponse, HttpHeaders, HttpRequest, HttpResponse }
 import io.netty.handler.codec.http.HttpHeaders.Names._
 import io.netty.handler.codec.http.HttpHeaders.isKeepAlive
-import io.netty.handler.codec.http.HttpRequest
-import io.netty.handler.codec.http.HttpResponse
 import io.netty.handler.codec.http.HttpResponseStatus._
 import io.netty.handler.codec.http.HttpVersion.HTTP_1_1
 

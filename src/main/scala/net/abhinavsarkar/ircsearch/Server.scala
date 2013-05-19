@@ -10,28 +10,21 @@ import scala.concurrent.future
 import com.typesafe.scalalogging.slf4j.Logging
 
 import au.com.bytecode.opencsv.CSVParser
+
 import io.netty.bootstrap.ServerBootstrap
 import io.netty.buffer.ByteBuf
 import io.netty.channel.ChannelHandler.Sharable
-import io.netty.channel.ChannelHandlerContext
-import io.netty.channel.ChannelInboundByteHandlerAdapter
-import io.netty.channel.ChannelInboundMessageHandlerAdapter
-import io.netty.channel.ChannelInitializer
+import io.netty.channel.{ ChannelHandlerContext, ChannelInboundByteHandlerAdapter,
+                          ChannelInboundMessageHandlerAdapter, ChannelInitializer }
 import io.netty.channel.socket.SocketChannel
-import io.netty.channel.socket.nio.NioEventLoopGroup
-import io.netty.channel.socket.nio.NioServerSocketChannel
-import io.netty.handler.codec.DelimiterBasedFrameDecoder
-import io.netty.handler.codec.Delimiters
-import io.netty.handler.codec.http.HttpChunkAggregator
-import io.netty.handler.codec.http.HttpContentCompressor
-import io.netty.handler.codec.http.HttpMethod
-import io.netty.handler.codec.http.HttpRequest
-import io.netty.handler.codec.http.HttpRequestDecoder
-import io.netty.handler.codec.http.HttpResponseEncoder
-import io.netty.handler.codec.http.QueryStringDecoder
+import io.netty.channel.socket.nio.{ NioEventLoopGroup, NioServerSocketChannel }
+import io.netty.handler.codec.{ DelimiterBasedFrameDecoder, Delimiters }
+import io.netty.handler.codec.http.{ HttpChunkAggregator, HttpContentCompressor, HttpMethod,
+                                     HttpRequest, HttpRequestDecoder, HttpResponseEncoder,
+                                     QueryStringDecoder }
 import io.netty.handler.codec.string.StringDecoder
-import net.abhinavsarkar.ircsearch.lucene.Indexer
-import net.abhinavsarkar.ircsearch.lucene.Searcher
+
+import net.abhinavsarkar.ircsearch.lucene._
 import net.abhinavsarkar.ircsearch.model._
 import net.liftweb.json.DefaultFormats
 import net.liftweb.json.Serialization
