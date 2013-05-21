@@ -11,9 +11,9 @@ import scala.collection.mutable.Buffer
 import org.apache.lucene.analysis.Analyzer
 import org.apache.lucene.queries.ChainedFilter
 import org.apache.lucene.queryparser.classic.MultiFieldQueryParser
-import org.apache.lucene.search.{ BooleanClause, BooleanQuery,  Filter, FilteredQuery,
+import org.apache.lucene.search.{ BooleanClause, BooleanQuery, Filter, FilteredQuery,
                                   NumericRangeFilter, Query, QueryWrapperFilter, SearcherFactory,
-                                  SearcherManager,  Sort, SortField, TermQuery }
+                                  SearcherManager, Sort, SortField, TermQuery }
 import org.apache.lucene.store.FSDirectory
 
 import com.typesafe.scalalogging.slf4j.Logging

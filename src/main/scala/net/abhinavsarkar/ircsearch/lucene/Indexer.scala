@@ -20,6 +20,7 @@ import org.apache.lucene.index.{ IndexWriter, IndexWriterConfig }
 import org.apache.lucene.store.FSDirectory
 import org.apache.lucene.util.Version
 
+import com.google.common.util.concurrent.RateLimiter
 import com.typesafe.scalalogging.slf4j.Logging
 
 import net.abhinavsarkar.ircsearch.model._
@@ -49,10 +50,13 @@ object Indexer extends Logging {
   val ContextSize = 2
   val ContextDurationSecs = 20
   val IndexingDurationSecs = 10
+  val FlushDurationSecs = 60
+  val RateLimitPerSec = 1000
 
-  private val indexQueue = new PriorityBlockingQueue[IndexRecord](10000)
+  private val indexQueue = new PriorityBlockingQueue[IndexRecord]
   private val scheduler = Executors.newScheduledThreadPool(2)
   private val runLock = new ReentrantLock
+  private val rateLimiter = RateLimiter.create(RateLimitPerSec)
   private var indexingFuture : Future[_] = null
   private var flushFuture : Future[_] = null
 
@@ -101,7 +105,10 @@ object Indexer extends Logging {
     s"index-$server-$channel-$botName"
 
   def index(indexRequest : IndexRequest) =
-    IndexRecord.fromIndexRequest(indexRequest).foreach(indexQueue.put)
+    IndexRecord.fromIndexRequest(indexRequest).foreach { rec =>
+      rateLimiter.acquire
+      indexQueue put rec
+    }
 
   private def doInLock(f : => Unit) {
     try {
@@ -161,7 +168,7 @@ object Indexer extends Logging {
             }
           }
 
-          if (indexRecBatch.size > windowSize) {
+          if (indexRecBatch.size >= windowSize) {
             indexRecBatch.slice(indexRecBatch.length - 2 * ContextSize, indexRecBatch.length)
             .zipWithIndex
             .map { r => if (r._2 < ContextSize) r._1.copy(indexed = true) else r._1 }
@@ -170,7 +177,7 @@ object Indexer extends Logging {
         }
       }
     }
-    flushFuture = schedule(0, 10, TimeUnit.SECONDS) {
+    flushFuture = schedule(0, FlushDurationSecs, TimeUnit.SECONDS) {
       doInLock(flush)
     }
   }
