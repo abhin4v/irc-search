@@ -2,6 +2,7 @@ package net.abhinavsarkar.ircsearch.lucene
 
 import java.io.File
 import java.util.ArrayList
+import java.util.Date
 import java.util.concurrent.{ Executors, Future, PriorityBlockingQueue, TimeUnit }
 import java.util.concurrent.locks.ReentrantLock
 
@@ -212,7 +213,7 @@ object Indexer extends Logging {
       val ctxAft = new TextField(ChatLine.CTXA, ctxToStr(chatLine.contextAfter), Field.Store.YES)
       indexWriter.addDocument(List(ts, user, msg, ctxBfr, ctxAft), indexWriter.getAnalyzer)
       logger.debug("Indexed : [{} {} {}] [{}] {}: {}",
-          server, channel, botName, chatLine.timestamp.toString, chatLine.user, chatLine.message)
+          server, channel, botName, new Date(chatLine.timestamp), chatLine.user, chatLine.message)
     }
   }
 
