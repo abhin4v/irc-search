@@ -70,7 +70,7 @@ object Server extends App with Logging {
     }
   }
 
-  def stopServer(server : ServerBootstrap) {
+  private def stopServer(server : ServerBootstrap) {
     logger.info("Stopping server")
     server.shutdown
     logger.info("Stopped server")
@@ -79,7 +79,7 @@ object Server extends App with Logging {
 }
 
 @Sharable
-object UnifiedHandler extends ChannelInboundByteHandlerAdapter {
+private object UnifiedHandler extends ChannelInboundByteHandlerAdapter {
 
   val httpRequestRouter = new HttpRequestRouter {
     val Echo = "^/echo$".r
@@ -132,7 +132,7 @@ object UnifiedHandler extends ChannelInboundByteHandlerAdapter {
 
 }
 
-class TcpIndexHandler extends ChannelInboundMessageHandlerAdapter[String] {
+private class TcpIndexHandler extends ChannelInboundMessageHandlerAdapter[String] {
   var server: String = null
   var channel : String = null
   var botName : String = null
@@ -148,14 +148,14 @@ class TcpIndexHandler extends ChannelInboundMessageHandlerAdapter[String] {
       botName = values(2)
       inited = true
     } else {
-      Indexer.index(new IndexRequest(server, channel, botName,
+      Indexer.index(IndexRequest(server, channel, botName,
           List(ChatLine(values(0), values(1).toLong, values(2)))))
     }
   }
 }
 
 @Sharable
-object EchoHandler extends HttpRequestHandler {
+private object EchoHandler extends HttpRequestHandler {
   override def messageReceived(ctx: ChannelHandlerContext, request: HttpRequest) {
     val content = request.getContent().toString(Charset.forName("UTF-8"))
     logRequest(ctx, request, sendSuccess(ctx, request, content))
@@ -163,7 +163,7 @@ object EchoHandler extends HttpRequestHandler {
 }
 
 @Sharable
-class IndexHandler extends HttpRequestHandler {
+private class IndexHandler extends HttpRequestHandler {
   implicit val formats = DefaultFormats
   override def messageReceived(ctx: ChannelHandlerContext, request: HttpRequest) {
     future {
@@ -176,7 +176,7 @@ class IndexHandler extends HttpRequestHandler {
 }
 
 @Sharable
-object SearchHandler extends HttpRequestHandler {
+private object SearchHandler extends HttpRequestHandler {
   implicit val formats = DefaultFormats
   override def messageReceived(ctx: ChannelHandlerContext, request: HttpRequest) {
     val f = future {
@@ -186,15 +186,12 @@ object SearchHandler extends HttpRequestHandler {
         Serialization.read[SearchRequest](content)
       } else if (HttpMethod.GET.equals(method)) {
         val params = new QueryStringDecoder(request.getUri).getParameters.toMap
-        val server = params("server")(0)
-        val channel = params("channel")(0)
-        val botName = params("botName")(0)
-        val query = params("query")(0)
-        val page = params.get("page").collect({ case l => l.get(0) })
-        val pageSize = params.get("pageSize").collect({ case l => l.get(0) })
-        val details = params.get("details").collect({ case l => l.get(0) })
+        val List(server, channel, botName, query) =
+          List("server", "channel", "botName", "query").map(params(_).get(0))
+        val List(page, pageSize, details) =
+          List("page", "pageSize", "details").map(params.get(_).map({ case l => l.get(0) }))
 
-        var sr = new SearchRequest(server, channel, botName, query)
+        var sr = SearchRequest(server, channel, botName, query)
         if (page.isDefined)
           sr = sr.copy(page = page.get.toInt)
         if (pageSize.isDefined)
@@ -210,16 +207,23 @@ object SearchHandler extends HttpRequestHandler {
     }
     f onSuccess {
       case (searchRequest, searchResult) =>
-        logRequest(ctx, request,
-          sendSuccess(ctx, request,
-            if (searchRequest.details)
-              Serialization.write(searchResult)
-            else
-              Serialization.write(searchResult.toSimpleSearchResult)))
+        logRequest(ctx, request, sendSuccess(ctx, request,
+          Serialization.write(
+            if (searchRequest.details) searchResult else searchResult.toSimpleSearchResult)))
     }
-    f onFailure { case e : Exception => {
-      logger.error("Error", e)
-      logRequest(ctx, request, sendError(ctx, request, e.getMessage))
-    }}
+    f onFailure {
+      case e => {
+        logger.error("Error", e)
+        val body = Serialization.write(SearchError(e.getMessage))
+        e match {
+          case e : NoSuchElementException => {
+            logRequest(ctx, request, sendClientError(ctx, request, body))
+          }
+          case _ => {
+            logRequest(ctx, request, sendServerError(ctx, request, body))
+          }
+        }
+      }
+    }
   }
 }

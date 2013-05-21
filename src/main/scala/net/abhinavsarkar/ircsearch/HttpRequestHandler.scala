@@ -26,20 +26,24 @@ trait HttpRequestHandler extends ChannelInboundMessageHandlerAdapter[HttpRequest
     response
   }
 
-  protected def sendSuccess(ctx : ChannelHandlerContext, request : HttpRequest, body : String) : HttpResponse = {
-    val response = new DefaultHttpResponse(HTTP_1_1, OK)
+  private def sendReponse(ctx: ChannelHandlerContext, request: HttpRequest,
+      response: HttpResponse, body: String): HttpResponse = {
     response.setContent(Unpooled.copiedBuffer(body.getBytes))
     response.setHeader(CONTENT_TYPE, "application/json")
     writeResponse(ctx, request, response)
     response
   }
 
-  protected def sendError(ctx : ChannelHandlerContext, request : HttpRequest, body : String) : HttpResponse = {
-    val response = new DefaultHttpResponse(HTTP_1_1, INTERNAL_SERVER_ERROR)
-    response.setContent(Unpooled.copiedBuffer(body.getBytes))
-    response.setHeader(CONTENT_TYPE, "text/plain")
-    writeResponse(ctx, request, response)
-    response
+  protected def sendSuccess(ctx : ChannelHandlerContext, request : HttpRequest, body : String) = {
+    sendReponse(ctx, request, new DefaultHttpResponse(HTTP_1_1, OK), body)
+  }
+
+  protected def sendServerError(ctx : ChannelHandlerContext, request : HttpRequest, body : String) = {
+    sendReponse(ctx, request, new DefaultHttpResponse(HTTP_1_1, INTERNAL_SERVER_ERROR), body)
+  }
+
+  protected def sendClientError(ctx : ChannelHandlerContext, request : HttpRequest, body : String) = {
+    sendReponse(ctx, request, new DefaultHttpResponse(HTTP_1_1, BAD_REQUEST), body)
   }
 
   protected def writeResponse(

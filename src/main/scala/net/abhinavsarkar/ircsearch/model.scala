@@ -43,3 +43,5 @@ object SearchResult {
 case class SimpleSearchResult(
     server : String, channel : String, botName : String, query: String,
     page : Int, pageSize : Int, totalResults : Int, lines : List[List[List[String]]])
+
+case class SearchError(error : String)

@@ -28,8 +28,7 @@ object Searcher extends Logging {
   private val searcherMgrs = mutable.Map[String, SearcherManager]()
 
   def close {
-    for (searcherMgr <- searcherMgrs.values)
-      searcherMgr.close
+    searcherMgrs.values.foreach(_.close)
     logger.info("Closed Searcher")
   }
 
@@ -41,7 +40,6 @@ object Searcher extends Logging {
 
         val dir = FSDirectory.open(indexDir)
         searcherMgrs += (dirPath -> new SearcherManager(dir, new SearcherFactory))
-
       }
     }
 
@@ -71,23 +69,18 @@ object Searcher extends Logging {
                 filterQuery.add(clause)
                 filters += new QueryWrapperFilter(filterQuery)
               }
-              case "before" => {
-                  try {
-                    val ts = sdf.parse(termQuery.getTerm.text).getTime
-                    filters += NumericRangeFilter.newLongRange(
-                        ChatLine.TS, 0, ts, true, true)
-                  } catch {
-                    case e : ParseException => {}
-                  }
+              case "before" => try {
+                val ts = sdf.parse(termQuery.getTerm.text).getTime
+                filters += NumericRangeFilter.newLongRange(ChatLine.TS, 0, ts, true, true)
+              } catch {
+                case e : ParseException => {}
               }
-              case "after" => {
-                try {
-                  val ts = sdf.parse(termQuery.getTerm.text).getTime
-                  filters += NumericRangeFilter.newLongRange(
-                      ChatLine.TS, ts, java.lang.Long.MAX_VALUE, true, true)
-                } catch {
-                  case e : ParseException => {}
-                }
+              case "after" => try {
+                val ts = sdf.parse(termQuery.getTerm.text).getTime
+                filters += NumericRangeFilter.newLongRange(
+                    ChatLine.TS, ts, java.lang.Long.MAX_VALUE, true, true)
+              } catch {
+                case e : ParseException => {}
               }
               case _ => newQuery.add(clause)
             }
@@ -108,7 +101,8 @@ object Searcher extends Logging {
     logger.debug("Searching : [{} {} {}] {}",
       searchRequest.server, searchRequest.channel, searchRequest.botName, searchRequest.query)
 
-    val indexDir = Indexer.getIndexDir(searchRequest.server, searchRequest.channel, searchRequest.botName)
+    val indexDir =
+      Indexer.getIndexDir(searchRequest.server, searchRequest.channel, searchRequest.botName)
     val analyzer = Indexer.mkAnalyzer
     try {
       val queryParser = mkQueryParser(analyzer)
@@ -147,10 +141,10 @@ object Searcher extends Logging {
         val LineRe = "(\\d+) (.*?): (.*)".r
         val List(ctxBefore, ctxAfter) = List(contextBefore, contextAfter).map {
           _.split('\n').filterNot(_.isEmpty).map {
-            case LineRe(timestamp, user, message) => new ChatLine(user, timestamp.toLong, message)
+            case LineRe(timestamp, user, message) => ChatLine(user, timestamp.toLong, message)
           }}
 
-        val chatLine = new ChatLine(user, timestamp.toLong, message, ctxBefore.toList, ctxAfter.toList)
+        val chatLine = ChatLine(user, timestamp.toLong, message, ctxBefore.toList, ctxAfter.toList)
         (chatLine, score)
       }
       (topDocs.totalHits, docs.toList)

@@ -41,9 +41,7 @@ object Indexer extends Logging {
   object IndexRecord {
     def fromIndexRequest(indexRequest : IndexRequest) = {
       val IndexRequest(server, channel, botName, chatLines) = indexRequest
-      for {
-        chatLine <- chatLines
-      } yield new IndexRecord(server, channel, botName, chatLine)
+      chatLines.map(IndexRecord(server, channel, botName, _))
     }
   }
 
@@ -64,14 +62,12 @@ object Indexer extends Logging {
   private val indexers = mutable.Map[String, IndexWriter]()
 
   private def close {
-    for (indexer <- indexers.values)
-      indexer.close
+    indexers.values.foreach(_.close)
     logger.info("Closed Indexer")
   }
 
   private def flush {
-    for (indexer <- indexers.values)
-      indexer.commit
+    indexers.values.foreach(_.commit)
     logger.info("Flushed Indexer")
   }
 
@@ -145,7 +141,7 @@ object Indexer extends Logging {
 
   def start {
     logger.info("Starting indexer")
-    indexingFuture = schedule(0, IndexingDurationSecs.max(ContextDurationSecs), TimeUnit.SECONDS) {
+    indexingFuture = schedule(0, IndexingDurationSecs, TimeUnit.SECONDS) {
       if (!indexQueue.isEmpty) {
         val indexRecs = new ArrayList[IndexRecord]
         indexQueue drainTo indexRecs
@@ -172,6 +168,7 @@ object Indexer extends Logging {
         }
       }
     }
+
     flushFuture = schedule(0, FlushDurationSecs, TimeUnit.SECONDS) {
       doInLock(flush)
     }
