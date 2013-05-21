@@ -128,11 +128,11 @@ object Indexer extends Logging {
       }
     }}
 
-  def schedule(initialDelay : Int, delay : Int, unit : TimeUnit)(f : => Unit) = {
+  private def schedule(initialDelay : Int, delay : Int, unit : TimeUnit)(f : => Unit) = {
     scheduler.scheduleWithFixedDelay(f, initialDelay, delay, unit)
   }
 
-  def fillContext(rec: IndexRecord, recs: Seq[IndexRecord], idx : Int) = {
+  private def fillContext(rec: IndexRecord, recs: Seq[IndexRecord], idx : Int) = {
     rec.copy(chatLine =
       rec.chatLine.copy(
         contextBefore = recs.slice(idx - ContextSize, idx).map(_.chatLine)
@@ -158,14 +158,8 @@ object Indexer extends Logging {
               doInLock {
                 doIndex(fillContext(recs(ContextSize), recs, ContextSize))
               }
-            } else if (recs.size < ContextSize + 1) {
-              recs.foreach(indexQueue.offer)
             } else {
-              recs.zipWithIndex.drop(ContextSize).foreach { r =>
-                doInLock {
-                  doIndex(fillContext(r._1, recs, r._2))
-                }
-              }
+              recs.foreach(indexQueue.put)
             }
           }
 
@@ -198,7 +192,7 @@ object Indexer extends Logging {
     }
   }
 
-  def ctxToStr(ctx : List[ChatLine]) =
+  private def ctxToStr(ctx : List[ChatLine]) =
     ctx.map { line => s"${line.timestamp} ${line.user}: ${line.message}" }  mkString "\n"
 
   private def doIndex(indexRecord: IndexRecord) {
