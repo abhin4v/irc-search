@@ -15,6 +15,7 @@ import org.apache.lucene.search.{ BooleanClause, BooleanQuery, Filter, FilteredQ
                                   NumericRangeFilter, Query, QueryWrapperFilter, SearcherFactory,
                                   SearcherManager, Sort, SortField, TermQuery }
 import org.apache.lucene.store.FSDirectory
+import org.streum.configrity.Configuration
 
 import com.typesafe.scalalogging.slf4j.Logging
 
@@ -22,8 +23,10 @@ import net.abhinavsarkar.ircsearch.model._
 
 object Searcher extends Logging {
 
-  val MaxHits = 1000
-  val MessageFieldBoost = java.lang.Float.valueOf(2.0f)
+  private val config = Configuration.loadResource("/irc-search.conf").detach("searching")
+
+  private val MaxHits = config[Int]("maxHits")
+  private val MessageFieldBoost = java.lang.Float.valueOf(config[Float]("messageFieldBoost"))
 
   private val searcherMgrs = mutable.Map[String, SearcherManager]()
 
@@ -47,7 +50,7 @@ object Searcher extends Logging {
   }
 
   private def mkQueryParser(analyzer : Analyzer) =
-    new MultiFieldQueryParser(Indexer.LUCENE_VERSION,
+    new MultiFieldQueryParser(Indexer.LuceneVersion,
         List(ChatLine.MSG, ChatLine.CTXB, ChatLine.CTXA).toArray, analyzer,
         Map(ChatLine.MSG -> MessageFieldBoost))
 

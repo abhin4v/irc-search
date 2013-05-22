@@ -9,6 +9,8 @@ import scala.concurrent.future
 
 import com.typesafe.scalalogging.slf4j.Logging
 
+import org.streum.configrity.Configuration
+
 import au.com.bytecode.opencsv.CSVParser
 
 import io.netty.bootstrap.ServerBootstrap
@@ -31,42 +33,39 @@ import net.liftweb.json.Serialization
 
 object Server extends App with Logging {
 
-  if (args.isEmpty) {
-    println("Please specify port to run the server on")
-    System.exit(1)
-  } else {
-    val port = args(0).toInt
-    logger.info("Starting server at port {}", port: Integer)
+  val config = Configuration.loadResource("/irc-search.conf")
+  val port = config[Int]("server.port")
 
-    val server = (new ServerBootstrap)
-      .group(new NioEventLoopGroup(1), new NioEventLoopGroup(1))
-      .channel(classOf[NioServerSocketChannel])
-      .childHandler(new ChannelInitializer[SocketChannel] {
-        def initChannel(ch: SocketChannel) {
-          val p = ch.pipeline
-            .addLast("unihandler", UnifiedHandler)
-        }})
-      .localAddress(new InetSocketAddress(port))
+  logger.info("Starting server at port {}", port: Integer)
 
-    val cleanup = { () =>
-      stopServer(server)
-      Indexer.stop
-      Searcher.close
-    }
+  val server = (new ServerBootstrap)
+    .group(new NioEventLoopGroup(1), new NioEventLoopGroup(1))
+    .channel(classOf[NioServerSocketChannel])
+    .childHandler(new ChannelInitializer[SocketChannel] {
+      def initChannel(ch: SocketChannel) {
+        val p = ch.pipeline
+          .addLast("unihandler", UnifiedHandler)
+      }})
+    .localAddress(new InetSocketAddress(port))
 
-    Runtime.getRuntime.addShutdownHook(
-      new Thread("ShutdownHook") {
-        override def run = cleanup()
-      })
+  val cleanup = { () =>
+    stopServer(server)
+    Indexer.stop
+    Searcher.close
+  }
 
-    try {
-      Indexer.start
-      server.bind().sync.channel.closeFuture.sync
-    } catch {
-      case e : Exception => {
-        logger.error("Exception while running server. Stopping server", e)
-        cleanup()
-      }
+  Runtime.getRuntime.addShutdownHook(
+    new Thread("ShutdownHook") {
+      override def run = cleanup()
+    })
+
+  try {
+    Indexer.start
+    server.bind().sync.channel.closeFuture.sync
+  } catch {
+    case e : Exception => {
+      logger.error("Exception while running server. Stopping server", e)
+      cleanup()
     }
   }
 
@@ -77,7 +76,6 @@ object Server extends App with Logging {
   }
 
 }
-
 @Sharable
 private object UnifiedHandler extends ChannelInboundByteHandlerAdapter {
 
