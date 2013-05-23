@@ -91,12 +91,12 @@ private object UnifiedHandler extends ChannelInboundByteHandlerAdapter {
   }
 
   override def inboundBufferUpdated(ctx : ChannelHandlerContext, in: ByteBuf) {
-    if (in.readableBytes() < 5) {
+    if (in.readableBytes < 5) {
       return;
     }
 
-    val magic1 = in.getUnsignedByte(in.readerIndex())
-    val magic2 = in.getUnsignedByte(in.readerIndex() + 1)
+    val magic1 = in.getUnsignedByte(in.readerIndex)
+    val magic2 = in.getUnsignedByte(in.readerIndex + 1)
     if (isHttp(magic1, magic2)) {
       ctx.pipeline
         .addLast("decoder", new HttpRequestDecoder)
@@ -107,7 +107,7 @@ private object UnifiedHandler extends ChannelInboundByteHandlerAdapter {
         .remove(this)
     } else {
       ctx.pipeline
-        .addLast("framedecoder", new DelimiterBasedFrameDecoder(1048576, Delimiters.lineDelimiter() : _*))
+        .addLast("framedecoder", new DelimiterBasedFrameDecoder(1048576, Delimiters.lineDelimiter : _*))
         .addLast("decoder", new StringDecoder(Charset.forName("UTF-8")))
         .addLast("csvhandler", new TcpIndexHandler)
         .remove(this)
@@ -147,7 +147,7 @@ private class TcpIndexHandler extends ChannelInboundMessageHandlerAdapter[String
       inited = true
     } else {
       Indexer.index(IndexRequest(server, channel, botName,
-          List(ChatLine(values(0), values(1).toLong, values(2)))))
+          Seq(ChatLine(values(0), values(1).toLong, values(2)))))
     }
   }
 }
@@ -155,7 +155,7 @@ private class TcpIndexHandler extends ChannelInboundMessageHandlerAdapter[String
 @Sharable
 private object EchoHandler extends HttpRequestHandler {
   override def messageReceived(ctx: ChannelHandlerContext, request: HttpRequest) {
-    val content = request.getContent().toString(Charset.forName("UTF-8"))
+    val content = request.getContent.toString(Charset.forName("UTF-8"))
     logRequest(ctx, request, sendSuccess(ctx, request, content))
   }
 }
@@ -165,7 +165,7 @@ private class IndexHandler extends HttpRequestHandler {
   implicit val formats = DefaultFormats
   override def messageReceived(ctx: ChannelHandlerContext, request: HttpRequest) {
     future {
-      val content = request.getContent().toString(Charset.forName("UTF-8"))
+      val content = request.getContent.toString(Charset.forName("UTF-8"))
       val indexRequest = Serialization.read[IndexRequest](content)
       Indexer.index(indexRequest)
     }
@@ -178,16 +178,16 @@ private object SearchHandler extends HttpRequestHandler {
   implicit val formats = DefaultFormats
   override def messageReceived(ctx: ChannelHandlerContext, request: HttpRequest) {
     val f = future {
-      val method = request.getMethod()
+      val method = request.getMethod
       val searchRequest = if (HttpMethod.POST.equals(method)) {
-        val content = request.getContent().toString(Charset.forName("UTF-8"))
+        val content = request.getContent.toString(Charset.forName("UTF-8"))
         Serialization.read[SearchRequest](content)
       } else if (HttpMethod.GET.equals(method)) {
         val params = new QueryStringDecoder(request.getUri).getParameters.toMap
-        val List(server, channel, botName, query) =
-          List("server", "channel", "botName", "query").map(params(_).get(0))
-        val List(page, pageSize, details) =
-          List("page", "pageSize", "details").map(params.get(_).map({ case l => l.get(0) }))
+        val Seq(server, channel, botName, query) =
+          Seq("server", "channel", "botName", "query").map(params(_).get(0))
+        val Seq(page, pageSize, details) =
+          Seq("page", "pageSize", "details").map(params.get(_).map({ case l => l.get(0) }))
 
         var sr = SearchRequest(server, channel, botName, query)
         if (page.isDefined)

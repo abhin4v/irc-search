@@ -51,7 +51,7 @@ object Searcher extends Logging {
 
   private def mkQueryParser(analyzer : Analyzer) =
     new MultiFieldQueryParser(Indexer.LuceneVersion,
-        List(ChatLine.MSG, ChatLine.CTXB, ChatLine.CTXA).toArray, analyzer,
+        Array(ChatLine.MSG, ChatLine.CTXB, ChatLine.CTXA), analyzer,
         Map(ChatLine.MSG -> MessageFieldBoost))
 
   private def filterifyQuery(query : Query) : Query =
@@ -121,13 +121,13 @@ object Searcher extends Logging {
     }
   }
 
-  private val DocFields = List(ChatLine.USER, ChatLine.TS, ChatLine.MSG, ChatLine.CTXB, ChatLine.CTXA)
+  private val DocFields = Seq(ChatLine.USER, ChatLine.TS, ChatLine.MSG, ChatLine.CTXB, ChatLine.CTXA)
 
   private def doSearch(indexDir : String, query : Query, page : Int, pageSize : Int)
-    : (Int, List[(ChatLine, Float)]) = {
+    : (Int, Seq[(ChatLine, Float)]) = {
     val searcherMgr = getSearcherMgr(indexDir)
     searcherMgr.maybeRefresh
-    val indexSearcher = searcherMgr.acquire()
+    val indexSearcher = searcherMgr.acquire
     try {
       val topDocs = indexSearcher.search(query, MaxHits.min((page + 1) * pageSize),
           new Sort(SortField.FIELD_SCORE, new SortField(ChatLine.TS, SortField.Type.LONG, true)))
@@ -139,15 +139,15 @@ object Searcher extends Logging {
           (map, field) => map += (field.name -> field.stringValue)
         }
 
-        val List(user, timestamp, message, contextBefore, contextAfter) = DocFields.map(doc)
+        val Seq(user, timestamp, message, contextBefore, contextAfter) = DocFields.map(doc)
 
         val LineRe = "(\\d+) (.*?): (.*)".r
-        val List(ctxBefore, ctxAfter) = List(contextBefore, contextAfter).map {
+        val Seq(ctxBefore, ctxAfter) = Seq(contextBefore, contextAfter).map {
           _.split('\n').filterNot(_.isEmpty).map {
             case LineRe(timestamp, user, message) => ChatLine(user, timestamp.toLong, message)
           }}
 
-        val chatLine = ChatLine(user, timestamp.toLong, message, ctxBefore.toList, ctxAfter.toList)
+        val chatLine = ChatLine(user, timestamp.toLong, message, ctxBefore, ctxAfter)
         (chatLine, score)
       }
       (topDocs.totalHits, docs.toList)

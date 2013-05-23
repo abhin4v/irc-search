@@ -49,11 +49,11 @@ object Indexer extends Logging {
   private val config = Configuration.loadResource("/irc-search.conf").detach("indexing")
 
   val LuceneVersion = Version.LUCENE_43
-  private val ContextSize = config[Int]("context.size")
+  private val ContextSize =         config[Int]("context.size")
   private val ContextDurationSecs = config[Int]("context.durationSecs")
-  private val RunIntervalSecs = config[Int]("runIntervalSecs")
-  private val FlushIntervalSecs = config[Int]("flushIntervalSecs")
-  private val RateLimitPerSec = config[Int]("rateLimitPerSec")
+  private val RunIntervalSecs =     config[Int]("runIntervalSecs")
+  private val FlushIntervalSecs =   config[Int]("flushIntervalSecs")
+  private val RateLimitPerSec =     config[Int]("rateLimitPerSec")
 
   private val indexQueue = new PriorityBlockingQueue[IndexRecord]
   private val scheduler = Executors.newScheduledThreadPool(2)
@@ -78,7 +78,7 @@ object Indexer extends Logging {
     val defAnalyzer = new StandardAnalyzer(LuceneVersion)
     val fieldAnalyzers = Map(
         ChatLine.USER -> new KeywordAnalyzer,
-        ChatLine.MSG -> new EnglishAnalyzer(LuceneVersion),
+        ChatLine.MSG  -> new EnglishAnalyzer(LuceneVersion),
         ChatLine.CTXB -> new EnglishAnalyzer(LuceneVersion),
         ChatLine.CTXA -> new EnglishAnalyzer(LuceneVersion))
 
@@ -136,10 +136,10 @@ object Indexer extends Logging {
       rec.chatLine.copy(
         contextBefore = recs.slice(idx - ContextSize, idx).map(_.chatLine)
         .filter(_.timestamp >= rec.chatLine.timestamp - ContextDurationSecs * 1000)
-        .toList,
+        .toSeq,
         contextAfter = recs.slice(idx + 1, 2 * ContextSize + 1).map(_.chatLine)
         .filter(_.timestamp <= rec.chatLine.timestamp + ContextDurationSecs * 1000)
-        .toList))
+        .toSeq))
   }
 
   def start {
@@ -148,7 +148,7 @@ object Indexer extends Logging {
       if (!indexQueue.isEmpty) {
         val indexRecs = new ArrayList[IndexRecord]
         indexQueue drainTo indexRecs
-        val indexRecsMap = indexRecs groupBy { r => (r.server, r.channel, r.botName) }
+        val indexRecsMap = indexRecs.toIndexedSeq groupBy { r => (r.server, r.channel, r.botName) }
 
         val windowSize = 2 * ContextSize + 1
         for (indexRecBatch <- indexRecsMap.values) {
@@ -192,7 +192,7 @@ object Indexer extends Logging {
     }
   }
 
-  private def ctxToStr(ctx : List[ChatLine]) =
+  private def ctxToStr(ctx : Seq[ChatLine]) =
     ctx.map { line => s"${line.timestamp} ${line.user}: ${line.message}" }  mkString "\n"
 
   private def doIndex(indexRecord: IndexRecord) {
@@ -205,7 +205,7 @@ object Indexer extends Logging {
       val msg = new TextField(ChatLine.MSG, chatLine.message, Field.Store.YES)
       val ctxBfr = new TextField(ChatLine.CTXB, ctxToStr(chatLine.contextBefore), Field.Store.YES)
       val ctxAft = new TextField(ChatLine.CTXA, ctxToStr(chatLine.contextAfter), Field.Store.YES)
-      indexWriter.addDocument(List(ts, user, msg, ctxBfr, ctxAft), indexWriter.getAnalyzer)
+      indexWriter.addDocument(Seq(ts, user, msg, ctxBfr, ctxAft), indexWriter.getAnalyzer)
       logger.debug("Indexed : [{} {} {}] [{}] {}: {}",
           server, channel, botName, new Date(chatLine.timestamp), chatLine.user, chatLine.message)
     }

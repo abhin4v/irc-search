@@ -10,11 +10,11 @@ object ChatLine {
 }
 
 case class ChatLine(user : String, timestamp : Long, message : String,
-    contextBefore : List[ChatLine] = List(),
-    contextAfter : List[ChatLine] = List())
+    contextBefore : Seq[ChatLine] = Seq(),
+    contextAfter : Seq[ChatLine] = Seq())
 
 case class IndexRequest(
-    server : String, channel : String, botName : String, chatLines : List[ChatLine])
+    server : String, channel : String, botName : String, chatLines : Seq[ChatLine])
 
 case class SearchRequest(
     server : String, channel : String, botName : String, query: String,
@@ -22,13 +22,13 @@ case class SearchRequest(
 
 case class SearchResult(
     server : String, channel : String, botName : String, query: String,
-    page : Int, pageSize : Int, totalResults : Int, chatLines : List[ChatLine]) {
+    page : Int, pageSize : Int, totalResults : Int, chatLines : Seq[ChatLine]) {
   def toSimpleSearchResult =
     SimpleSearchResult(server, channel, botName, query, page, pageSize, totalResults,
       chatLines map {
         case mline@ChatLine(_, _, _, contextBefore, contextAfter) =>
           ((contextBefore :+ mline) ++ contextAfter) map { line =>
-            List(line.timestamp.toString, line.user, line.message)
+            Seq(line.timestamp.toString, line.user, line.message)
           }
       })
 }
@@ -36,12 +36,12 @@ case class SearchResult(
 object SearchResult {
   def fromSearchRequest(searchRequest : SearchRequest) = searchRequest match {
     case SearchRequest(server, channel, botName, query, page, pageSize, _) =>
-      new SearchResult(server, channel, botName, query, page, pageSize, 0, List())
+      new SearchResult(server, channel, botName, query, page, pageSize, 0, Seq())
   }
 }
 
 case class SimpleSearchResult(
     server : String, channel : String, botName : String, query: String,
-    page : Int, pageSize : Int, totalResults : Int, lines : List[List[List[String]]])
+    page : Int, pageSize : Int, totalResults : Int, lines : Seq[Seq[Seq[String]]])
 
 case class SearchError(error : String)
